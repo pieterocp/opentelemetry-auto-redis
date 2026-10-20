@@ -1,0 +1,47 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  phpunit:
+    name: PHPUnit (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.3', '8.4', '8.5']
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: opentelemetry, redis
+          coverage: none
+
+      # Tests authenticate as the "test" user defined in the dev Redis config, and connect to host "redis"
+      - name: Start Redis
+        run: |
+          docker run -d --name redis -p 6379:6379 \
+            -v "$PWD/.docker/config/redis/redis.conf:/etc/redis/redis.conf:ro" \
+            redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499 \
+            redis-server /etc/redis/redis.conf
+          until docker exec redis redis-cli --user test --pass passwd --no-auth-warning ping | grep -q PONG; do sleep 1; done
+          echo "127.0.0.1 redis" | sudo tee -a /etc/hosts
+
+      - run: composer install --no-interaction --no-progress --prefer-dist
+
+      - run: vendor/bin/phpunit
