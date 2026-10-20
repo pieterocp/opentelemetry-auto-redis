@@ -1,0 +1,43 @@
+name: Static analysis
+
+on:
+  push:
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-analysis:
+    name: Static analysis
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.2'
+          extensions: opentelemetry, redis
+          coverage: none
+
+      - run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: PHP-CS-Fixer
+        if: ${{ !cancelled() }}
+        run: vendor/bin/php-cs-fixer fix --dry-run --diff --config=.php-cs-fixer.php
+
+      - name: PHPStan
+        if: ${{ !cancelled() }}
+        run: vendor/bin/phpstan analyse --configuration=phpstan.neon.dist --no-progress
+
+      - name: Psalm
+        if: ${{ !cancelled() }}
+        run: vendor/bin/psalm --config=psalm.xml.dist --find-unused-code --find-unused-psalm-suppress --show-info=true --no-progress
